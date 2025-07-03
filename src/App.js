@@ -3,12 +3,11 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, addDoc, getDocs, onSnapshot, doc, deleteDoc, updateDoc, query, where } from 'firebase/firestore';
 
-// Global variables provided by the Canvas environment (Đã được điều chỉnh để đọc từ biến môi trường của React)
-// For local preview in Canvas, these will be undefined, so fallback to default values or empty objects.
-// When deployed on Vercel, these will be populated by the environment variables you set there.
-const appId = process.env.REACT_APP_FIREBASE_APP_ID || 'default-app-id';
-const firebaseConfig = process.env.REACT_APP_FIREBASE_CONFIG ? JSON.parse(process.env.REACT_APP_FIREBASE_CONFIG) : {};
-const initialAuthToken = process.env.REACT_APP_FIREBASE_AUTH_TOKEN || null;
+// Global variables provided by the Canvas environment.
+// These are directly available in the browser environment where the app runs.
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
 
 // Main App Component
@@ -92,7 +91,7 @@ const App = () => {
         ngayNhan: '',
     });
 
-    const [customerForm, setCustomerForm] = useState({ // New customer form
+    const [customerForm, setCustomerForm] = useState({ // New state for customer form
         id: null,
         name: '',
         phone: '',
@@ -103,7 +102,7 @@ const App = () => {
         notes: '',
     });
 
-    const [appointmentForm, setAppointmentForm] = useState({ // New appointment form
+    const [appointmentForm, setAppointmentForm] = useState({ // New state for appointment form
         id: null,
         customerId: '', // Link to customer ID
         propertyId: '', // Link to property ID (optional)
@@ -131,6 +130,7 @@ const App = () => {
                     setUserId(user.uid);
                 } else {
                     // Sign in anonymously if no custom token is provided
+                    // This is crucial for Canvas environment where __initial_auth_token might not always be present
                     if (!initialAuthToken) {
                         await signInAnonymously(firebaseAuth);
                     }
@@ -165,10 +165,19 @@ const App = () => {
                 }
             }
         };
-        if (auth && !userId) { // Only try to sign in if auth is ready and no user is set yet
+        // Only try to sign in if auth is ready and no user is set yet
+        // and if initialAuthToken is actually provided (not null from fallback)
+        if (auth && !userId && initialAuthToken) {
             signIn();
+        } else if (auth && !userId && !initialAuthToken && isAuthReady) {
+            // If no initial token and auth is ready, ensure anonymous sign-in
+            signInAnonymously(auth).catch(anonError => {
+                console.error("Lỗi đăng nhập ẩn danh (fallback):", anonError);
+                showMessage("Lỗi: Không thể đăng nhập ẩn danh.");
+            });
         }
-    }, [auth, initialAuthToken, userId]);
+    }, [auth, initialAuthToken, userId, isAuthReady]);
+
 
     // Fetch properties when auth is ready and userId is available
     useEffect(() => {
@@ -945,8 +954,7 @@ const App = () => {
                 const data = new Uint8Array(e.target.result);
                 const workbook = window.XLSX.read(data, { type: 'array' });
                 const sheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[sheetName];
-                const json = window.XLSX.utils.sheet_to_json(worksheet);
+                const worksheet = window.XLSX.utils.sheet_to_json(worksheet);
 
                 let importedCount = 0;
                 const propertiesCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/properties`);
